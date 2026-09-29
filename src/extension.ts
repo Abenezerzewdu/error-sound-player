@@ -1,4 +1,7 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
+import { execFile } from "child_process";
 
 let changeTimer: NodeJS.Timeout | undefined;
 
@@ -14,6 +17,55 @@ let hasInitialSnapshot = false;
 
 function getErrorKey(error: ErrorSnapshot): string {
   return `${error.file}|${error.message}|${error.line}|${error.column}`;
+}
+
+function playErrorSound(context: vscode.ExtensionContext) {
+  const soundPath = path.join(context.extensionPath, "sounds", "error.mp3");
+
+  console.log("🔊 Trying to play:", soundPath);
+
+  // Check that the file actually exists
+  if (!fs.existsSync(soundPath)) {
+    console.error("❌ Sound file does not exist:", soundPath);
+    return;
+  }
+
+  console.log("✅ Sound file exists");
+
+  // Escape the path for PowerShell
+  const escapedPath = soundPath.replace(/'/g, "''");
+
+  const script = `
+    Add-Type -AssemblyName presentationCore
+
+    $player = New-Object System.Windows.Media.MediaPlayer
+
+    $player.Open([System.Uri]::new('${escapedPath}'))
+
+    Start-Sleep -Milliseconds 500
+
+    $player.Play()
+
+    Start-Sleep -Seconds 3
+
+    $player.Stop()
+    $player.Close()
+  `;
+
+  execFile(
+    "powershell.exe",
+    ["-NoProfile", "-Command", script],
+    (error, stdout, stderr) => {
+      if (error) {
+        console.error("❌ Audio process failed:", error);
+        console.error("stderr:", stderr);
+        return;
+      }
+
+      console.log("🔊 Sound playback command finished");
+      console.log("stdout:", stdout);
+    },
+  );
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -53,7 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (currentErrors.length > 0) {
           console.log("🔊 Existing errors detected!", currentErrors);
 
-          // Sound will go here later
+          playErrorSound(context);
         }
 
         previousErrors = currentErrors;
@@ -72,7 +124,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (newErrors.length > 0) {
         console.log("🚨 NEW ERROR DETECTED!", newErrors);
 
-        // Sound will go here later
+        playErrorSound(context);
       } else {
         console.log("✅ No new errors.");
       }
